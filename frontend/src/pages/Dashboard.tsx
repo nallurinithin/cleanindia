@@ -51,7 +51,7 @@ const Dashboard = () => {
     useEffect(() => {
         const fetchComplaints = async () => {
             try {
-                const response = await fetch('http://localhost:5000/api/complaints');
+                const response = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/api/complaints`);
                 if (response.ok) {
                     const data: ComplaintData[] = await response.json();
                     setComplaints(data);

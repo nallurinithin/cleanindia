@@ -41,7 +41,7 @@ const Layout = ({ children, type = 'citizen' }: LayoutProps) => {
 
     const fetchNotifications = async () => {
         try {
-            const res = await fetch(`http://localhost:5000/api/notifications?role=${userRole}&identifier=${userEmail}`);
+            const res = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/api/notifications?role=${userRole}&identifier=${userEmail}`);
             if (res.ok) {
                 const data = await res.json();
                 setNotifications(data);
@@ -61,7 +61,7 @@ const Layout = ({ children, type = 'citizen' }: LayoutProps) => {
         setIsNotifOpen(!isNotifOpen);
         if (!isNotifOpen && unreadCount > 0) {
             try {
-                await fetch('http://localhost:5000/api/notifications/read', {
+                await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/api/notifications/read`, {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ role: userRole, identifier: userEmail })

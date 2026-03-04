@@ -28,7 +28,7 @@ const ManageComplaints = () => {
     useEffect(() => {
         const fetchComplaints = async () => {
             try {
-                const response = await fetch('http://localhost:5000/api/complaints');
+                const response = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/api/complaints`);
                 if (response.ok) {
                     const data = await response.json();
                     setComplaintsData(data);
@@ -43,7 +43,7 @@ const ManageComplaints = () => {
 
     const handleResolve = async (id: string) => {
         try {
-            const response = await fetch(`http://localhost:5000/api/complaints/${id}/resolve`, {
+            const response = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/api/complaints/${id}/resolve`, {
                 method: 'PATCH',
             });
             if (response.ok) {
@@ -61,7 +61,7 @@ const ManageComplaints = () => {
 
     const handleUpdateStatus = async (id: string, newStatus: string) => {
         try {
-            const response = await fetch(`http://localhost:5000/api/complaints/${id}/status`, {
+            const response = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/api/complaints/${id}/status`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ status: newStatus }),
@@ -82,7 +82,7 @@ const ManageComplaints = () => {
 
     const handleAssign = async (id: string, assignee: string) => {
         try {
-            const response = await fetch(`http://localhost:5000/api/complaints/${id}/assign`, {
+            const response = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/api/complaints/${id}/assign`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ assignedTo: assignee }),
