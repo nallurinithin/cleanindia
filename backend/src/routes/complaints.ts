@@ -56,11 +56,16 @@ router.post('/', async (req, res) => {
 });
 
 // @route   GET /api/complaints
-// @desc    Get all complaints sorted by newest
+// @desc    Get all complaints sorted by newest, optionally filtered by reportedBy
 router.get('/', async (req, res) => {
     try {
-        // Find all and sort by reportedAt descending
-        const complaints = await Complaint.find().sort({ reportedAt: -1 });
+        const { reportedBy } = req.query;
+        let filter = {};
+        if (reportedBy) {
+            filter = { reportedBy: String(reportedBy) };
+        }
+        // Find and sort by reportedAt descending
+        const complaints = await Complaint.find(filter).sort({ reportedAt: -1 });
         res.status(200).json(complaints);
     } catch (error) {
         console.error('Error fetching complaints:', error);

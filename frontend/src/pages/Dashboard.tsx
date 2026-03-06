@@ -40,13 +40,15 @@ interface ComplaintData {
     description: string;
     status: string;
     aiScore?: number;
+    imageUrl?: string;
     assignedTo?: string;
     reportedAt: string;
+    resolvedAt?: string;
 }
 
 const Dashboard = () => {
     const [complaints, setComplaints] = useState<ComplaintData[]>([]);
-    const [stats, setStats] = useState({ total: 0, resolved: 0, pending: 0, avgResolution: 4.2 });
+    const [stats, setStats] = useState({ total: 0, resolved: 0, pending: 0, avgResolution: '0.0' });
 
     useEffect(() => {
         const fetchComplaints = async () => {
@@ -59,11 +61,31 @@ const Dashboard = () => {
                     const resolvedCount = data.filter(c => c.status === 'resolved').length;
                     const pendingCount = data.filter(c => c.status === 'pending' || c.status === 'in progress').length;
 
+                    // Calculate Average Resolution Time
+                    let totalResolutionMs = 0;
+                    let resolvedWithDates = 0;
+
+                    data.forEach(c => {
+                        if (c.status === 'resolved' && c.resolvedAt && c.reportedAt) {
+                            const resolvedMs = new Date(c.resolvedAt).getTime();
+                            const reportedMs = new Date(c.reportedAt).getTime();
+                            totalResolutionMs += (resolvedMs - reportedMs);
+                            resolvedWithDates++;
+                        }
+                    });
+
+                    let avgResText = '0.0';
+                    if (resolvedWithDates > 0) {
+                        const avgMs = totalResolutionMs / resolvedWithDates;
+                        const avgDays = (avgMs / (1000 * 60 * 60 * 24)).toFixed(1);
+                        avgResText = avgDays;
+                    }
+
                     setStats({
                         total: data.length,
                         resolved: resolvedCount,
                         pending: pendingCount,
-                        avgResolution: 4.2 // Placeholder until we calculate real resolution time
+                        avgResolution: avgResText
                     });
                 }
             } catch (error) {
@@ -213,7 +235,11 @@ const Dashboard = () => {
                                     complaints.slice(0, 5).map(complaint => (
                                         <div key={complaint._id} className="flex gap-3 bg-gray-50 rounded-lg p-3 border border-gray-100">
                                             <div className="w-16 h-16 bg-gray-200 rounded-md overflow-hidden flex-shrink-0 flex items-center justify-center text-gray-400">
-                                                <span className="text-xs font-bold">{complaint.category.charAt(0)}</span>
+                                                {complaint.imageUrl ? (
+                                                    <img src={complaint.imageUrl} alt={complaint.title} className="w-full h-full object-cover" />
+                                                ) : (
+                                                    <span className="text-xs font-bold">{complaint.category.charAt(0)}</span>
+                                                )}
                                             </div>
                                             <div className="flex-1">
                                                 <h4 className="text-sm font-semibold text-gray-800 line-clamp-1">{complaint.title}</h4>

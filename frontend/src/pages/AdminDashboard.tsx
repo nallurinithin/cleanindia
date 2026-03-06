@@ -54,7 +54,9 @@ const AdminDashboard = () => {
         pending: 0,
         inProgress: 0,
         critical: 0,
-        avgResolution: '0h'
+        avgResolution: '0h',
+        avgResolutionValue: '0',
+        avgResolutionUnit: 'hours'
     });
 
     useEffect(() => {
@@ -82,15 +84,22 @@ const AdminDashboard = () => {
                         }
                     });
 
+                    let avgResValue = '0';
+                    let avgResUnit = 'hours';
                     let avgResText = '0h';
+
                     if (resolvedWithDates > 0) {
                         const avgMs = totalResolutionMs / resolvedWithDates;
-                        const avgHours = Math.floor(avgMs / (1000 * 60 * 60));
+                        const avgHours = avgMs / (1000 * 60 * 60);
                         if (avgHours < 24) {
-                            avgResText = `${avgHours}h`;
+                            avgResValue = avgHours.toFixed(1);
+                            avgResUnit = 'hours';
+                            avgResText = `${Math.floor(avgHours)}h`;
                         } else {
-                            const avgDays = Math.floor(avgHours / 24);
-                            avgResText = `${avgDays}d`;
+                            const avgDays = avgHours / 24;
+                            avgResValue = avgDays.toFixed(1);
+                            avgResUnit = 'days';
+                            avgResText = `${Math.floor(avgDays)}d`;
                         }
                     }
 
@@ -100,7 +109,9 @@ const AdminDashboard = () => {
                         pending: pendingCount,
                         inProgress: inProgressCount,
                         critical: criticalCount,
-                        avgResolution: avgResText
+                        avgResolution: avgResText,
+                        avgResolutionValue: avgResValue,
+                        avgResolutionUnit: avgResUnit
                     });
                 }
             } catch (error) {
@@ -192,7 +203,7 @@ const AdminDashboard = () => {
                             </div>
                             <div>
                                 <p className="text-sm text-gray-500 mb-1">Avg Resolution Time</p>
-                                <h2 className="text-2xl font-bold text-gray-900">4.2 <span className="text-base font-normal">days</span></h2>
+                                <h2 className="text-2xl font-bold text-gray-900">{stats.avgResolutionValue} <span className="text-base font-normal">{stats.avgResolutionUnit}</span></h2>
                             </div>
                         </div>
 
