@@ -11,8 +11,8 @@ export const api = {
     async request<T = any>(endpoint: string, options: RequestInit = {}): Promise<T> {
         const token = localStorage.getItem('token');
 
-        const headers: HeadersInit = {
-            ...options.headers,
+        const headers: Record<string, string> = {
+            ...(options.headers as Record<string, string>),
         };
 
         if (token) {
