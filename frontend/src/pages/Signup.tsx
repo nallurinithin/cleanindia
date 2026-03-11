@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Mail, Lock, User as UserIcon, Shield, Phone } from 'lucide-react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import toast from 'react-hot-toast';
+import { api } from '../utils/api';
 
 const Signup = () => {
     const [role, setRole] = useState<'citizen' | 'admin'>('citizen');
@@ -18,23 +19,13 @@ const Signup = () => {
 
         try {
             const payload = { role, name, phone, email, password };
-            const response = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/api/auth/register`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
+            await api.post('/api/auth/register', payload);
 
-            const data = await response.json();
-
-            if (response.ok) {
-                toast.success('Registration successful!', { id: tid });
-                navigate('/login', { state: location.state });
-            } else {
-                toast.error(data.message || 'Registration failed', { id: tid });
-            }
-        } catch (error) {
+            toast.success('Registration successful!', { id: tid });
+            navigate('/login', { state: location.state });
+        } catch (error: any) {
             console.error('Registration error:', error);
-            toast.error('An error occurred. Please try again.', { id: tid });
+            toast.error(error.message || 'Registration failed', { id: tid });
         }
     };
 
@@ -113,10 +104,13 @@ const Signup = () => {
                             <input
                                 type="text"
                                 value={phone}
-                                onChange={(e) => setPhone(e.target.value)}
-                                placeholder="Enter your phone number"
+                                onChange={(e) => setPhone(e.target.value.replace(/[^0-9]/g, ''))}
+                                placeholder="Enter 10-digit phone number"
                                 className="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#115e59]/20 focus:border-[#115e59] transition-all"
                                 required
+                                pattern="[0-9]{10}"
+                                maxLength={10}
+                                title="Please enter exactly 10 digits"
                                 autoComplete="new-password"
                             />
                         </div>
@@ -154,9 +148,11 @@ const Signup = () => {
                                 type="password"
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
-                                placeholder="Enter your password"
+                                placeholder="Min. 8 characters"
                                 className="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#115e59]/20 focus:border-[#115e59] transition-all"
                                 required
+                                minLength={8}
+                                title="Password must be at least 8 characters long"
                                 autoComplete="new-password"
                             />
                         </div>

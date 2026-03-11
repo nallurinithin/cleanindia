@@ -20,7 +20,8 @@ function App() {
       <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/admin" element={<AdminDashboard />} />
+        <Route path="/admin" element={<Login />} />
+        <Route path="/admin/dashboard" element={<AdminDashboard />} />
         <Route path="/admin/complaints" element={<ManageComplaints />} />
         <Route path="/report" element={<ReportIssue />} />
         <Route path="/complaints" element={<MyComplaints />} />

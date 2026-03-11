@@ -1,36 +1,38 @@
 import { useState, useEffect } from 'react';
 import { TrendingUp, Clock, Activity, CheckCircle, AlertCircle, Timer, Users, BarChart2, MapPin, PieChart as PieChartIcon } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar, Legend } from 'recharts';
+import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+import L from 'leaflet';
 import Layout from '../components/Layout';
+import { api } from '../utils/api';
+import toast from 'react-hot-toast';
+import Skeleton from '../components/Skeleton';
 
-const trendData = [
-    { name: 'Aug', total: 700, resolved: 500 },
-    { name: 'Sep', total: 850, resolved: 650 },
-    { name: 'Oct', total: 800, resolved: 700 },
-    { name: 'Nov', total: 1150, resolved: 980 },
-    { name: 'Dec', total: 950, resolved: 850 },
-    { name: 'Jan', total: 1100, resolved: 950 },
-    { name: 'Feb', total: 1247, resolved: 1050 },
-];
+// Heatmap Layer Component using raw Leaflet
+const HeatmapLayer = ({ points }: { points: [number, number, number][] }) => {
+    const map = useMap();
 
-const categoryData = [
-    { name: 'Garbage', value: 26, color: '#166534' }, // dark green
-    { name: 'Others', value: 17, color: '#a855f7' }, // purple
-    { name: 'Water Supply', value: 11, color: '#eab308' }, // yellow
-    { name: 'Street Lights', value: 13, color: '#22c55e' }, // green
-    { name: 'Drainage', value: 14, color: '#0ea5e9' }, // sky blue
-    { name: 'Potholes', value: 20, color: '#f97316' }, // orange
-];
+    useEffect(() => {
+        if (!(L as any).heatLayer) return;
 
-const wardData = [
-    { name: 'Ward 45', issues: 85 },
-    { name: 'Ward 12', issues: 75 },
-    { name: 'Ward 67', issues: 65 },
-    { name: 'Ward 89', issues: 55 },
-    { name: 'Ward 23', issues: 45 },
-    { name: 'Ward 101', issues: 40 },
-];
+        const layer = (L as any).heatLayer(points, {
+            radius: 25,
+            blur: 15,
+            maxZoom: 17,
+            gradient: { 0.4: 'blue', 0.65: 'lime', 1: 'red' }
+        }).addTo(map);
 
+        return () => {
+            map.removeLayer(layer);
+        };
+    }, [map, points]);
+
+    return null;
+};
+
+
+// Interface
 interface ComplaintData {
     _id: string;
     complaintId: string;
@@ -58,64 +60,123 @@ const AdminDashboard = () => {
         avgResolutionValue: '0',
         avgResolutionUnit: 'hours'
     });
+    const [trendData, setTrendData] = useState<any[]>([]);
+    const [categoryData, setCategoryData] = useState<any[]>([]);
+    const [wardData, setWardData] = useState<any[]>([]);
+    const [complaints, setComplaints] = useState<any[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [viewMode, setViewMode] = useState<'markers' | 'heatmap'>('markers');
 
     useEffect(() => {
         const fetchComplaints = async () => {
+            setIsLoading(true);
             try {
-                const response = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/api/complaints`);
-                if (response.ok) {
-                    const data: ComplaintData[] = await response.json();
+                const data = await api.get<ComplaintData[]>('/api/complaints');
 
-                    const resolvedCount = data.filter(c => c.status === 'resolved').length;
-                    const pendingCount = data.filter(c => c.status === 'pending').length;
-                    const inProgressCount = data.filter(c => c.status === 'in progress').length;
-                    const criticalCount = data.filter(c => c.priority === 'critical').length;
+                const resolvedCount = data.filter(c => c.status === 'resolved').length;
+                const pendingCount = data.filter(c => c.status === 'submitted' || c.status === 'verified').length;
+                const inProgressCount = data.filter(c => c.status === 'assigned' || c.status === 'in progress').length;
+                const criticalCount = data.filter(c => c.priority === 'critical').length;
 
-                    // Calculate Average Resolution Time
-                    let totalResolutionMs = 0;
-                    let resolvedWithDates = 0;
+                // Calculate Average Resolution Time
+                let totalResolutionMs = 0;
+                let resolvedWithDates = 0;
 
-                    data.forEach(c => {
-                        if (c.status === 'resolved' && c.resolvedAt && c.reportedAt) {
-                            const resolvedMs = new Date(c.resolvedAt).getTime();
-                            const reportedMs = new Date(c.reportedAt).getTime();
-                            totalResolutionMs += (resolvedMs - reportedMs);
-                            resolvedWithDates++;
-                        }
-                    });
-
-                    let avgResValue = '0';
-                    let avgResUnit = 'hours';
-                    let avgResText = '0h';
-
-                    if (resolvedWithDates > 0) {
-                        const avgMs = totalResolutionMs / resolvedWithDates;
-                        const avgHours = avgMs / (1000 * 60 * 60);
-                        if (avgHours < 24) {
-                            avgResValue = avgHours.toFixed(1);
-                            avgResUnit = 'hours';
-                            avgResText = `${Math.floor(avgHours)}h`;
-                        } else {
-                            const avgDays = avgHours / 24;
-                            avgResValue = avgDays.toFixed(1);
-                            avgResUnit = 'days';
-                            avgResText = `${Math.floor(avgDays)}d`;
-                        }
+                data.forEach(c => {
+                    if (c.status === 'resolved' && c.resolvedAt && c.reportedAt) {
+                        const resolvedMs = new Date(c.resolvedAt).getTime();
+                        const reportedMs = new Date(c.reportedAt).getTime();
+                        totalResolutionMs += (resolvedMs - reportedMs);
+                        resolvedWithDates++;
                     }
+                });
 
-                    setStats({
-                        total: data.length,
-                        resolved: resolvedCount,
-                        pending: pendingCount,
-                        inProgress: inProgressCount,
-                        critical: criticalCount,
-                        avgResolution: avgResText,
-                        avgResolutionValue: avgResValue,
-                        avgResolutionUnit: avgResUnit
-                    });
+                let avgResValue = '0';
+                let avgResUnit = 'hours';
+                let avgResText = '0h';
+
+                if (resolvedWithDates > 0) {
+                    const avgMs = totalResolutionMs / resolvedWithDates;
+                    const avgHours = avgMs / (1000 * 60 * 60);
+                    if (avgHours < 24) {
+                        avgResValue = avgHours.toFixed(1);
+                        avgResUnit = 'hours';
+                        avgResText = `${Math.floor(avgHours)}h`;
+                    } else {
+                        const avgDays = avgHours / 24;
+                        avgResValue = avgDays.toFixed(1);
+                        avgResUnit = 'days';
+                        avgResText = `${Math.floor(avgDays)}d`;
+                    }
                 }
-            } catch (error) {
+
+                setStats({
+                    total: data.length,
+                    resolved: resolvedCount,
+                    pending: pendingCount,
+                    inProgress: inProgressCount,
+                    critical: criticalCount,
+                    avgResolution: avgResText,
+                    avgResolutionValue: avgResValue,
+                    avgResolutionUnit: avgResUnit
+                });
+
+                // --- AGGREGATE CHART DATA ---
+
+                // 1. Monthly Trends
+                const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                const monthlyMap: any = {};
+
+                // Initialize last 6 months
+                const now = new Date();
+                for (let i = 5; i >= 0; i--) {
+                    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+                    const label = months[d.getMonth()];
+                    monthlyMap[label] = { name: label, total: 0, resolved: 0 };
+                }
+
+                data.forEach(c => {
+                    const d = new Date(c.reportedAt);
+                    const label = months[d.getMonth()];
+                    if (monthlyMap[label]) {
+                        monthlyMap[label].total++;
+                        if (c.status === 'resolved') monthlyMap[label].resolved++;
+                    }
+                });
+                setTrendData(Object.values(monthlyMap));
+
+                // 2. Category Distribution
+                const catMap: any = {};
+                const colors = ['#166534', '#a855f7', '#eab308', '#22c55e', '#0ea5e9', '#f97316'];
+                data.forEach(c => {
+                    catMap[c.category] = (catMap[c.category] || 0) + 1;
+                });
+                setCategoryData(Object.entries(catMap).map(([name, value], i) => ({
+                    name,
+                    value,
+                    color: colors[i % colors.length]
+                })));
+
+                // 3. Ward Data (Heuristic: use top 6 locations)
+                const locMap: any = {};
+                data.forEach(c => {
+                    // Try to extract Ward number or just use location
+                    const match = c.location.match(/Ward\s*(\d+)/i);
+                    const key = match ? `Ward ${match[1]}` : c.location;
+                    locMap[key] = (locMap[key] || 0) + 1;
+                });
+                setWardData(Object.entries(locMap)
+                    .sort((a: any, b: any) => b[1] - a[1])
+                    .slice(0, 6)
+                    .map(([name, issues]) => ({ name, issues })));
+
+                setComplaints(data);
+
+            } catch (error: any) {
                 console.error('Failed to fetch complaints:', error);
+                toast.error(error.message || 'Failed to load dashboard metrics');
+            } finally {
+                setIsLoading(false);
             }
         };
 
@@ -137,7 +198,9 @@ const AdminDashboard = () => {
                         <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 flex items-center justify-between">
                             <div>
                                 <p className="text-sm text-gray-500 mb-1">Avg. Resolution</p>
-                                <h2 className="text-3xl font-bold text-gray-900 mb-1">{stats.avgResolution}</h2>
+                                <h2 className="text-3xl font-bold text-gray-900 mb-1">
+                                    {isLoading ? <Skeleton width={60} height={32} /> : stats.avgResolution}
+                                </h2>
                                 <p className="text-xs text-green-600 flex items-center gap-1 font-medium bg-green-50 w-fit px-2 py-0.5 rounded-full mt-2">
                                     <TrendingUp className="w-3 h-3" /> Real-time Based
                                 </p>
@@ -151,7 +214,9 @@ const AdminDashboard = () => {
                         <div className="bg-white rounded-xl p-6 shadow-sm border-l-[3px] border-l-orange-500 border border-t-gray-100 border-r-gray-100 border-b-gray-100 flex items-center justify-between">
                             <div>
                                 <p className="text-sm text-gray-500 mb-1">Pending</p>
-                                <h2 className="text-3xl font-bold text-[#ea580c] mb-1">{stats.pending}</h2>
+                                <h2 className="text-3xl font-bold text-[#ea580c] mb-1">
+                                    {isLoading ? <Skeleton width={40} height={32} /> : stats.pending}
+                                </h2>
                                 <p className="text-xs text-[#ea580c] font-medium">Needs attention</p>
                             </div>
                             <div className="w-12 h-12 bg-orange-50 text-orange-500 rounded-full flex items-center justify-center">
@@ -163,7 +228,9 @@ const AdminDashboard = () => {
                         <div className="bg-white rounded-xl p-6 shadow-sm border-l-[3px] border-l-purple-500 border border-t-gray-100 border-r-gray-100 border-b-gray-100 flex items-center justify-between">
                             <div>
                                 <p className="text-sm text-gray-500 mb-1">In Progress</p>
-                                <h2 className="text-3xl font-bold text-purple-600 mb-1">{stats.inProgress}</h2>
+                                <h2 className="text-3xl font-bold text-purple-600 mb-1">
+                                    {isLoading ? <Skeleton width={40} height={32} /> : stats.inProgress}
+                                </h2>
                                 <p className="text-xs text-purple-500 font-medium">Active assignments</p>
                             </div>
                             <div className="w-12 h-12 bg-purple-50 text-purple-500 rounded-full flex items-center justify-center">
@@ -175,7 +242,9 @@ const AdminDashboard = () => {
                         <div className="bg-white rounded-xl p-6 shadow-sm border-l-[3px] border-l-green-500 border border-t-gray-100 border-r-gray-100 border-b-gray-100 flex items-center justify-between">
                             <div>
                                 <p className="text-sm text-gray-500 mb-1">Resolved</p>
-                                <h2 className="text-3xl font-bold text-green-600 mb-1">{stats.resolved}</h2>
+                                <h2 className="text-3xl font-bold text-green-600 mb-1">
+                                    {isLoading ? <Skeleton width={40} height={32} /> : stats.resolved}
+                                </h2>
                                 <p className="text-xs text-green-600 font-medium">↑ 8% resolution rate</p>
                             </div>
                             <div className="w-12 h-12 bg-green-50 text-green-500 rounded-full flex items-center justify-center">
@@ -226,19 +295,23 @@ const AdminDashboard = () => {
                         <h3 className="font-bold text-gray-900 mb-1">Monthly Complaint Trend</h3>
                         <p className="text-sm text-gray-500 mb-6">Complaints vs Resolved (Last 7 months)</p>
                         <div className="h-[300px] w-full">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <LineChart data={trendData} margin={{ top: 5, right: 30, left: -20, bottom: 5 }}>
-                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
-                                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#6B7280', fontSize: 12 }} dy={10} />
-                                    <YAxis axisLine={false} tickLine={false} tick={{ fill: '#6B7280', fontSize: 12 }} />
-                                    <RechartsTooltip
-                                        contentStyle={{ borderRadius: '8px', border: '1px solid #E5E7EB', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                                    />
-                                    <Legend iconType="circle" wrapperStyle={{ paddingTop: '20px', fontSize: '12px' }} />
-                                    <Line type="monotone" dataKey="total" name="Total Complaints" stroke="#115e59" strokeWidth={2} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 6 }} />
-                                    <Line type="monotone" dataKey="resolved" name="Resolved" stroke="#22c55e" strokeWidth={2} dot={{ r: 4, strokeWidth: 2 }} />
-                                </LineChart>
-                            </ResponsiveContainer>
+                            {isLoading ? (
+                                <Skeleton width="100%" height="100%" />
+                            ) : (
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <LineChart data={trendData} margin={{ top: 5, right: 30, left: -20, bottom: 5 }}>
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
+                                        <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#6B7280', fontSize: 12 }} dy={10} />
+                                        <YAxis axisLine={false} tickLine={false} tick={{ fill: '#6B7280', fontSize: 12 }} />
+                                        <RechartsTooltip
+                                            contentStyle={{ borderRadius: '8px', border: '1px solid #E5E7EB', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                                        />
+                                        <Legend iconType="circle" wrapperStyle={{ paddingTop: '20px', fontSize: '12px' }} />
+                                        <Line type="monotone" dataKey="total" name="Total Complaints" stroke="#115e59" strokeWidth={2} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 6 }} />
+                                        <Line type="monotone" dataKey="resolved" name="Resolved" stroke="#22c55e" strokeWidth={2} dot={{ r: 4, strokeWidth: 2 }} />
+                                    </LineChart>
+                                </ResponsiveContainer>
+                            )}
                         </div>
                     </div>
 
@@ -246,25 +319,29 @@ const AdminDashboard = () => {
                         <h3 className="font-bold text-gray-900 mb-1">Category Distribution</h3>
                         <p className="text-sm text-gray-500 mb-6">Complaints by type</p>
                         <div className="h-[300px] w-full flex items-center justify-center">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <PieChart>
-                                    <Pie
-                                        data={categoryData}
-                                        cx="50%"
-                                        cy="50%"
-                                        labelLine={false}
-                                        outerRadius={100}
-                                        innerRadius={0}
-                                        dataKey="value"
-                                        label={({ name, percent }: any) => `${name} ${(percent * 100).toFixed(0)}%`}
-                                    >
-                                        {categoryData.map((entry, index) => (
-                                            <Cell key={`cell-${index}`} fill={entry.color} />
-                                        ))}
-                                    </Pie>
-                                    <RechartsTooltip />
-                                </PieChart>
-                            </ResponsiveContainer>
+                            {isLoading ? (
+                                <Skeleton width="100%" height="100%" />
+                            ) : (
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <PieChart>
+                                        <Pie
+                                            data={categoryData}
+                                            cx="50%"
+                                            cy="50%"
+                                            labelLine={false}
+                                            outerRadius={100}
+                                            innerRadius={0}
+                                            dataKey="value"
+                                            label={({ name, percent }: any) => `${name} ${(percent * 100).toFixed(0)}%`}
+                                        >
+                                            {categoryData.map((entry: any, index: number) => (
+                                                <Cell key={`cell-${index}`} fill={entry.color} />
+                                            ))}
+                                        </Pie>
+                                        <RechartsTooltip />
+                                    </PieChart>
+                                </ResponsiveContainer>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -274,19 +351,84 @@ const AdminDashboard = () => {
                     <h3 className="font-bold text-gray-900 mb-1">Ward-wise Issue Distribution</h3>
                     <p className="text-sm text-gray-500 mb-6">Top 6 wards with most complaints</p>
                     <div className="h-[300px] w-full">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={wardData} margin={{ top: 20, right: 30, left: -20, bottom: 5 }}>
-                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
-                                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#6B7280', fontSize: 12 }} dy={10} />
-                                <YAxis axisLine={false} tickLine={false} tick={{ fill: '#6B7280', fontSize: 12 }} />
-                                <RechartsTooltip
-                                    cursor={{ fill: '#F3F4F6' }}
-                                    contentStyle={{ borderRadius: '8px', border: '1px solid #E5E7EB' }}
+                        {isLoading ? (
+                            <Skeleton width="100%" height="100%" />
+                        ) : (
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={wardData} margin={{ top: 20, right: 30, left: -20, bottom: 5 }}>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
+                                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#6B7280', fontSize: 12 }} dy={10} />
+                                    <YAxis axisLine={false} tickLine={false} tick={{ fill: '#6B7280', fontSize: 12 }} />
+                                    <RechartsTooltip
+                                        cursor={{ fill: '#F3F4F6' }}
+                                        contentStyle={{ borderRadius: '8px', border: '1px solid #E5E7EB' }}
+                                    />
+                                    <Legend wrapperStyle={{ paddingTop: '20px', fontSize: '12px' }} />
+                                    <Bar dataKey="issues" name="Total Issues" fill="#166534" radius={[4, 4, 0, 0]} barSize={60} />
+                                </BarChart>
+                            </ResponsiveContainer>
+                        )}
+                    </div>
+                </div>
+
+                <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 mb-8">
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+                        <div>
+                            <h3 className="font-bold text-gray-900 mb-1">Geospatial Issue Analytics</h3>
+                            <p className="text-sm text-gray-500">Live visualization of complaints across the city</p>
+                        </div>
+                        <div className="bg-gray-100 p-1 rounded-lg flex items-center">
+                            <button
+                                onClick={() => setViewMode('markers')}
+                                className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${viewMode === 'markers' ? 'bg-white text-[#115e59] shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                            >
+                                Markers
+                            </button>
+                            <button
+                                onClick={() => setViewMode('heatmap')}
+                                className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${viewMode === 'heatmap' ? 'bg-white text-[#115e59] shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                            >
+                                Heatmap
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="h-[450px] w-full rounded-xl overflow-hidden border border-gray-100 relative z-0">
+                        {isLoading ? (
+                            <Skeleton width="100%" height="100%" />
+                        ) : (
+                            <MapContainer center={[20.5937, 78.9629]} zoom={5} style={{ height: '100%', width: '100%' }}>
+                                <TileLayer
+                                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                                 />
-                                <Legend wrapperStyle={{ paddingTop: '20px', fontSize: '12px' }} />
-                                <Bar dataKey="issues" name="Total Issues" fill="#166534" radius={[4, 4, 0, 0]} barSize={60} />
-                            </BarChart>
-                        </ResponsiveContainer>
+                                {viewMode === 'markers' ? (
+                                    complaints.filter((c: any) => c.latitude && c.longitude).map((c: any) => (
+                                        <Marker key={c._id} position={[c.latitude, c.longitude]}>
+                                            <Popup>
+                                                <div className="p-1">
+                                                    <p className="font-bold text-[#115e59] mb-1">{c.title}</p>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${c.priority === 'critical' ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-600'}`}>
+                                                            {c.priority}
+                                                        </span>
+                                                        <span className="text-[10px] text-gray-400">{c.category}</span>
+                                                    </div>
+                                                </div>
+                                            </Popup>
+                                        </Marker>
+                                    ))
+                                ) : (
+                                    <HeatmapLayer
+                                        points={complaints.filter((c: any) => c.latitude && c.longitude).map((c: any) => [
+                                            c.latitude,
+                                            c.longitude,
+                                            c.priority === 'critical' ? 1.0 : (c.priority === 'high' ? 0.7 : 0.4)
+                                        ])}
+                                    />
+                                )}
+                            </MapContainer>
+                        )}
                     </div>
                 </div>
 

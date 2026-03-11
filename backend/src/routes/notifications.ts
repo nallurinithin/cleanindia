@@ -1,51 +1,18 @@
 import { Router } from 'express';
-import { Notification } from '../models/Notification';
+import * as notificationController from '../controllers/notificationController';
+import { authenticate } from '../middleware/auth';
 
 const router = Router();
 
+// All notification routes require authentication
+router.use(authenticate);
+
 // @route   GET /api/notifications
 // @desc    Get user notifications
-router.get('/', async (req, res) => {
-    try {
-        const { role, identifier } = req.query;
+router.get('/', notificationController.getNotifications);
 
-        let queryRecipient = role === 'admin' ? 'admin' : identifier;
-
-        if (!queryRecipient) {
-            return res.status(400).json({ message: 'Missing identifier' });
-        }
-
-        const notifications = await Notification.find({ recipient: queryRecipient as string })
-            .sort({ createdAt: -1 })
-            .limit(20);
-        res.status(200).json(notifications);
-    } catch (error) {
-        console.error('Error fetching notifications:', error);
-        res.status(500).json({ message: 'Server error' });
-    }
-});
-
-// @route   PATCH /api/notifications/read
-// @desc    Mark user notifications as read
-router.patch('/read', async (req, res) => {
-    try {
-        const { role, identifier } = req.body;
-        let queryRecipient = role === 'admin' ? 'admin' : identifier;
-
-        if (!queryRecipient) {
-            return res.status(400).json({ message: 'Missing identifier' });
-        }
-
-        await Notification.updateMany(
-            { recipient: queryRecipient, read: false },
-            { $set: { read: true } }
-        );
-
-        res.status(200).json({ message: 'Notifications marked as read' });
-    } catch (error) {
-        console.error('Error updating notifications:', error);
-        res.status(500).json({ message: 'Server error' });
-    }
-});
+// @route   PATCH /api/notifications/:id/read
+// @desc    Mark a notification as read
+router.patch('/:id/read', notificationController.markAsRead);
 
 export default router;

@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { useState, useRef, useEffect } from 'react';
 import { Bell, User as UserIcon, Home, Plus, FileText, Trophy, Facebook, Twitter, Youtube, LayoutDashboard, Settings, LogOut, CheckCircle, Info, AlertTriangle } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
 
 interface LayoutProps {
     children: ReactNode;
@@ -19,7 +20,7 @@ const Layout = ({ children, type = 'citizen' }: LayoutProps) => {
     ];
 
     const adminNavItems = [
-        { path: '/admin', icon: LayoutDashboard, label: 'Dashboard' },
+        { path: '/admin/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
         { path: '/admin/complaints', icon: FileText, label: 'Manage Complaints' },
     ];
 
@@ -43,7 +44,22 @@ const Layout = ({ children, type = 'citizen' }: LayoutProps) => {
         try {
             const res = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/api/notifications?role=${userRole}&identifier=${userEmail}`);
             if (res.ok) {
+                const contentType = res.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) return;
+
                 const data = await res.json();
+
+                // Check for new notifications to show toast
+                if (notifications.length > 0 && data.length > notifications.length) {
+                    const newNotifs = data.filter((n: any) => !notifications.find((old: any) => old._id === n._id));
+                    newNotifs.forEach((n: any) => {
+                        toast(n.message, {
+                            icon: n.type === 'success' ? '✅' : (n.type === 'warning' ? '⚠️' : '🔔'),
+                            duration: 4000
+                        });
+                    });
+                }
+
                 setNotifications(data);
             }
         } catch (error) {
@@ -98,7 +114,7 @@ const Layout = ({ children, type = 'citizen' }: LayoutProps) => {
         <div className="min-h-screen bg-[#f8fafc] flex flex-col font-sans text-gray-900">
             {/* Top Header */}
             <header className="bg-white px-6 py-3 flex items-center justify-between">
-                <Link to={type === 'admin' ? '/admin' : '/dashboard'} className="flex items-center gap-3 hover:opacity-90 transition-opacity">
+                <Link to={type === 'admin' ? '/admin/dashboard' : '/dashboard'} className="flex items-center gap-3 hover:opacity-90 transition-opacity">
                     <div className="w-10 h-10 bg-[#115e59] rounded-full flex items-center justify-center text-white font-bold">
                         CI
                     </div>

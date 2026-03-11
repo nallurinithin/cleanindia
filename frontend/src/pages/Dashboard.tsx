@@ -4,7 +4,11 @@ import { Link } from 'react-router-dom';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
+import MarkerClusterGroup from 'react-leaflet-cluster';
 import Layout from '../components/Layout';
+import { api } from '../utils/api';
+import toast from 'react-hot-toast';
+import Skeleton from '../components/Skeleton';
 
 // Fix for default marker icons in react-leaflet
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -42,54 +46,66 @@ interface ComplaintData {
     aiScore?: number;
     imageUrl?: string;
     assignedTo?: string;
+    latitude?: number | string;
+    longitude?: number | string;
     reportedAt: string;
     resolvedAt?: string;
 }
 
+const getImageUrl = (url?: string) => {
+    if (!url) return undefined;
+    if (url.startsWith('http') || url.startsWith('data:')) return url;
+    const baseUrl = import.meta.env.VITE_API_URL || "http://localhost:5000";
+    const normalizedUrl = url.startsWith('/') ? url : `/${url}`;
+    return `${baseUrl}${normalizedUrl}`;
+};
+
 const Dashboard = () => {
     const [complaints, setComplaints] = useState<ComplaintData[]>([]);
     const [stats, setStats] = useState({ total: 0, resolved: 0, pending: 0, avgResolution: '0.0' });
+    const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
         const fetchComplaints = async () => {
+            setIsLoading(true);
             try {
-                const response = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/api/complaints`);
-                if (response.ok) {
-                    const data: ComplaintData[] = await response.json();
-                    setComplaints(data);
+                const data = await api.get<ComplaintData[]>('/api/complaints');
+                setComplaints(data);
 
-                    const resolvedCount = data.filter(c => c.status === 'resolved').length;
-                    const pendingCount = data.filter(c => c.status === 'pending' || c.status === 'in progress').length;
+                const resolvedCount = data.filter(c => c.status === 'resolved').length;
+                const pendingCount = data.filter(c => ['submitted', 'verified', 'assigned', 'in progress'].includes(c.status)).length;
 
-                    // Calculate Average Resolution Time
-                    let totalResolutionMs = 0;
-                    let resolvedWithDates = 0;
+                // Calculate Average Resolution Time
+                let totalResolutionMs = 0;
+                let resolvedWithDates = 0;
 
-                    data.forEach(c => {
-                        if (c.status === 'resolved' && c.resolvedAt && c.reportedAt) {
-                            const resolvedMs = new Date(c.resolvedAt).getTime();
-                            const reportedMs = new Date(c.reportedAt).getTime();
-                            totalResolutionMs += (resolvedMs - reportedMs);
-                            resolvedWithDates++;
-                        }
-                    });
-
-                    let avgResText = '0.0';
-                    if (resolvedWithDates > 0) {
-                        const avgMs = totalResolutionMs / resolvedWithDates;
-                        const avgDays = (avgMs / (1000 * 60 * 60 * 24)).toFixed(1);
-                        avgResText = avgDays;
+                data.forEach(c => {
+                    if (c.status === 'resolved' && c.resolvedAt && c.reportedAt) {
+                        const resolvedMs = new Date(c.resolvedAt).getTime();
+                        const reportedMs = new Date(c.reportedAt).getTime();
+                        totalResolutionMs += (resolvedMs - reportedMs);
+                        resolvedWithDates++;
                     }
+                });
 
-                    setStats({
-                        total: data.length,
-                        resolved: resolvedCount,
-                        pending: pendingCount,
-                        avgResolution: avgResText
-                    });
+                let avgResText = '0.0';
+                if (resolvedWithDates > 0) {
+                    const avgMs = totalResolutionMs / resolvedWithDates;
+                    const avgDays = (avgMs / (1000 * 60 * 60 * 24)).toFixed(1);
+                    avgResText = avgDays;
                 }
-            } catch (error) {
+
+                setStats({
+                    total: data.length,
+                    resolved: resolvedCount,
+                    pending: pendingCount,
+                    avgResolution: avgResText
+                });
+            } catch (error: any) {
                 console.error('Failed to fetch complaints:', error);
+                toast.error(error.message || 'Failed to load dashboard data');
+            } finally {
+                setIsLoading(false);
             }
         };
 
@@ -133,7 +149,9 @@ const Dashboard = () => {
                     <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 flex items-center justify-between">
                         <div>
                             <p className="text-sm text-gray-500 mb-1">Total Complaints</p>
-                            <h2 className="text-3xl font-bold text-gray-900">{stats.total}</h2>
+                            <h2 className="text-3xl font-bold text-gray-900">
+                                {isLoading ? <Skeleton width={40} height={32} /> : stats.total}
+                            </h2>
                         </div>
                         <div className="w-12 h-12 bg-blue-50 text-blue-500 rounded-full flex items-center justify-center">
                             <TrendingUp className="w-6 h-6" />
@@ -143,7 +161,9 @@ const Dashboard = () => {
                     <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 flex items-center justify-between">
                         <div>
                             <p className="text-sm text-gray-500 mb-1">Resolved</p>
-                            <h2 className="text-3xl font-bold text-green-600">{stats.resolved}</h2>
+                            <h2 className="text-3xl font-bold text-green-600">
+                                {isLoading ? <Skeleton width={40} height={32} /> : stats.resolved}
+                            </h2>
                         </div>
                         <div className="w-12 h-12 bg-green-50 text-green-500 rounded-full flex items-center justify-center">
                             <CheckCircle className="w-6 h-6" />
@@ -153,7 +173,9 @@ const Dashboard = () => {
                     <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 flex items-center justify-between">
                         <div>
                             <p className="text-sm text-gray-500 mb-1">Pending/In Progress</p>
-                            <h2 className="text-3xl font-bold text-[#ea580c]">{stats.pending}</h2>
+                            <h2 className="text-3xl font-bold text-[#ea580c]">
+                                {isLoading ? <Skeleton width={40} height={32} /> : stats.pending}
+                            </h2>
                         </div>
                         <div className="w-12 h-12 bg-orange-50 text-orange-500 rounded-full flex items-center justify-center">
                             <AlertTriangle className="w-6 h-6" />
@@ -163,7 +185,9 @@ const Dashboard = () => {
                     <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 flex items-center justify-between">
                         <div>
                             <p className="text-sm text-gray-500 mb-1">Avg. Resolution</p>
-                            <h2 className="text-3xl font-bold text-gray-900">{stats.avgResolution} <span className="text-lg font-medium">days</span></h2>
+                            <h2 className="text-3xl font-bold text-gray-900">
+                                {isLoading ? <Skeleton width={80} height={32} /> : <>{stats.avgResolution} <span className="text-lg font-medium">days</span></>}
+                            </h2>
                         </div>
                         <div className="w-12 h-12 bg-purple-50 text-purple-500 rounded-full flex items-center justify-center">
                             <Users className="w-6 h-6" />
@@ -176,31 +200,40 @@ const Dashboard = () => {
                     {/* Map Column */}
                     <div className="lg:col-span-2 space-y-4">
                         <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-                            <h3 className="font-bold text-gray-900 leading-tight">Interactive Complaint Map</h3>
-                            <p className="text-sm text-gray-500 mb-4">Click on markers to view complaint details</p>
-
                             <div className="h-[400px] w-full rounded-lg overflow-hidden border border-gray-200 relative z-0">
                                 <MapContainer center={[20.5937, 78.9629]} zoom={5} style={{ height: '100%', width: '100%' }}>
                                     <TileLayer
                                         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                                         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                                     />
-                                    {/* Sample Markers in India */}
-                                    <Marker position={[28.6139, 77.2090]} icon={orangeIcon}>
-                                        <Popup>Overflowing Garbage Bin</Popup>
-                                    </Marker>
-                                    <Marker position={[19.0760, 72.8777]} icon={blueIcon}>
-                                        <Popup>Street Light Not Working</Popup>
-                                    </Marker>
-                                    <Marker position={[13.0827, 80.2707]} icon={greenIcon}>
-                                        <Popup>Drainage Overflow</Popup>
-                                    </Marker>
-                                    <Marker position={[12.9716, 77.5946]} icon={orangeIcon}>
-                                        <Popup>Illegal Dumping</Popup>
-                                    </Marker>
-                                    <Marker position={[22.5726, 88.3639]} icon={blueIcon}>
-                                        <Popup>Deep Pothole</Popup>
-                                    </Marker>
+
+                                    <MarkerClusterGroup
+                                        chunkedLoading
+                                        maxClusterRadius={50}
+                                        showCoverageOnHover={false}
+                                    >
+                                        {complaints.filter(c => c.latitude && c.longitude).map(complaint => (
+                                            <Marker
+                                                key={complaint._id}
+                                                position={[Number(complaint.latitude), Number(complaint.longitude)]}
+                                                icon={
+                                                    complaint.status === 'resolved' ? greenIcon :
+                                                        complaint.priority === 'critical' ? orangeIcon : blueIcon
+                                                }
+                                            >
+                                                <Popup>
+                                                    <div className="p-1">
+                                                        <h4 className="font-bold text-gray-900 border-b border-gray-100 pb-1 mb-1">{complaint.title}</h4>
+                                                        <p className="text-xs text-gray-500 mb-1">{complaint.location}</p>
+                                                        <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase ${complaint.status === 'resolved' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
+                                                            }`}>
+                                                            {complaint.status}
+                                                        </span>
+                                                    </div>
+                                                </Popup>
+                                            </Marker>
+                                        ))}
+                                    </MarkerClusterGroup>
                                 </MapContainer>
 
                                 {/* Map Legend */}
@@ -229,14 +262,25 @@ const Dashboard = () => {
                             <p className="text-sm text-gray-500 mb-4">Latest issues reported in your area</p>
 
                             <div className="flex-1 space-y-3">
-                                {complaints.length === 0 ? (
+                                {isLoading ? (
+                                    [...Array(3)].map((_, i) => (
+                                        <div key={i} className="flex gap-3 bg-gray-50 rounded-lg p-3 border border-gray-100">
+                                            <Skeleton width={64} height={64} className="flex-shrink-0" />
+                                            <div className="flex-1 space-y-2">
+                                                <Skeleton width="80%" height={16} />
+                                                <Skeleton width="50%" height={12} />
+                                                <Skeleton width="30%" height={10} />
+                                            </div>
+                                        </div>
+                                    ))
+                                ) : complaints.length === 0 ? (
                                     <div className="text-center py-6 text-gray-500 text-sm">No complaints found.</div>
                                 ) : (
                                     complaints.slice(0, 5).map(complaint => (
                                         <div key={complaint._id} className="flex gap-3 bg-gray-50 rounded-lg p-3 border border-gray-100">
                                             <div className="w-16 h-16 bg-gray-200 rounded-md overflow-hidden flex-shrink-0 flex items-center justify-center text-gray-400">
                                                 {complaint.imageUrl ? (
-                                                    <img src={complaint.imageUrl} alt={complaint.title} className="w-full h-full object-cover" />
+                                                    <img src={getImageUrl(complaint.imageUrl)} alt={complaint.title} className="w-full h-full object-cover" />
                                                 ) : (
                                                     <span className="text-xs font-bold">{complaint.category.charAt(0)}</span>
                                                 )}

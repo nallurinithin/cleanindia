@@ -1,14 +1,15 @@
 import { useState } from 'react';
-import { Mail, Lock, User as UserIcon, Shield } from 'lucide-react';
+import { Mail, Lock } from 'lucide-react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import toast from 'react-hot-toast';
 
 const Login = () => {
-    const [role, setRole] = useState<'citizen' | 'admin'>('citizen');
+    const location = useLocation();
+    const isAdminPath = location.pathname.startsWith('/admin');
+    const [role] = useState<'citizen' | 'admin'>(isAdminPath ? 'admin' : 'citizen');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const navigate = useNavigate();
-    const location = useLocation();
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -21,27 +22,35 @@ const Login = () => {
                 body: JSON.stringify({ email, password, role })
             });
 
-            const data = await response.json();
+            let data;
+            const contentType = response.headers.get('content-type');
+            if (contentType && contentType.includes('application/json')) {
+                data = await response.json();
+            }
 
-            if (response.ok) {
-                // Store user details in localStorage
-                localStorage.setItem('token', data.token);
-                localStorage.setItem('userRole', data.role);
-                localStorage.setItem('userName', data.name);
-                localStorage.setItem('userEmail', data.email);
-                localStorage.setItem('userPhone', data.phone || '');
+            if (response.ok && data) {
+                const result = data.data;
+                const user = result.user;
+
+                localStorage.setItem('token', result.token);
+                localStorage.setItem('userRole', user.role);
+                localStorage.setItem('userName', user.name);
+                localStorage.setItem('userEmail', user.email);
+                localStorage.setItem('userPhone', user.phone || '');
 
                 toast.success('Login successful!', { id: tid });
 
-                // Route admin/citizen appropriately
-                if (data.role === 'admin') {
-                    navigate('/admin');
+                if (user.role === 'admin') {
+                    navigate('/admin/dashboard');
+                } else if (user.role === 'worker') {
+                    navigate('/worker/dashboard');
                 } else {
                     const redirectPath = location.state?.from || '/dashboard';
                     navigate(redirectPath);
                 }
             } else {
-                toast.error(data.message || 'Invalid credentials', { id: tid });
+                const errorMessage = data?.message || (response.status === 429 ? 'Too many requests. Please slow down.' : 'Invalid credentials or server error');
+                toast.error(errorMessage, { id: tid });
             }
         } catch (error) {
             console.error('Login error:', error);
@@ -53,42 +62,18 @@ const Login = () => {
         <div className="min-h-screen bg-[#f8fafc] flex flex-col items-center justify-center p-4 font-sans">
             {/* Header section */}
             <div className="text-center mb-8">
-                <div className="mx-auto w-12 h-12 bg-[#115e59] rounded-full flex items-center justify-center text-white font-bold text-xl mb-4">
+                <div className={`mx-auto w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-xl mb-4 ${role === 'admin' ? 'bg-[#ea580c]' : 'bg-[#115e59]'}`}>
                     CI
                 </div>
                 <h1 className="text-2xl font-bold text-[#115e59] mb-1">Clean India</h1>
-                <p className="text-gray-500 text-sm">Smart City Civic Management Platform</p>
+                <p className="text-gray-500 text-sm">{role === 'admin' ? 'Administrator Portal' : 'Smart City Civic Management Platform'}</p>
             </div>
 
             {/* Login Card */}
             <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-100 w-full max-w-[400px]">
                 <div className="text-center mb-6">
-                    <h2 className="text-xl font-bold text-gray-900">Welcome Back</h2>
-                    <p className="text-gray-500 text-sm mt-1">Sign in to access your account</p>
-                </div>
-
-                {/* Role Toggle */}
-                <div className="bg-gray-100 p-1 rounded-lg flex mb-6">
-                    <button
-                        onClick={() => setRole('citizen')}
-                        className={`flex-1 py-1.5 flex items-center justify-center gap-2 rounded-md text-sm font-medium transition-colors ${role === 'citizen'
-                            ? 'bg-[#115e59] text-white shadow'
-                            : 'text-gray-500 hover:text-gray-700'
-                            }`}
-                    >
-                        <UserIcon className="w-4 h-4" />
-                        Citizen
-                    </button>
-                    <button
-                        onClick={() => setRole('admin')}
-                        className={`flex-1 py-1.5 flex items-center justify-center gap-2 rounded-md text-sm font-medium transition-colors ${role === 'admin'
-                            ? 'bg-[#ea580c] text-white shadow'
-                            : 'text-gray-500 hover:text-gray-700'
-                            }`}
-                    >
-                        <Shield className="w-4 h-4" />
-                        Admin
-                    </button>
+                    <h2 className="text-xl font-bold text-gray-900">{role === 'admin' ? 'Admin Login' : 'Welcome Back'}</h2>
+                    <p className="text-gray-500 text-sm mt-1">{role === 'admin' ? 'Portal management access' : 'Sign in to access your account'}</p>
                 </div>
 
                 {/* Form */}
@@ -128,6 +113,7 @@ const Login = () => {
                                 placeholder="Enter your password"
                                 className="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#115e59]/20 focus:border-[#115e59] transition-all"
                                 required
+                                minLength={8}
                                 autoComplete="new-password"
                             />
                         </div>

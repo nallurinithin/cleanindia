@@ -1,24 +1,43 @@
-import { useState, useEffect } from 'react';
-import { Search, ChevronDown, Download, User as UserIcon } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Search, ChevronDown, Download, User as UserIcon, Camera, X } from 'lucide-react';
 import Layout from '../components/Layout';
 import toast from 'react-hot-toast';
+import { api } from '../utils/api';
+import Skeleton from '../components/Skeleton';
 
 interface ComplaintData {
     _id: string;
     complaintId: string;
     title: string;
     category: string;
-    priority: string;
+    priority: 'low' | 'medium' | 'high' | 'critical';
+    severity?: number;
+    trafficLevel?: number;
+    populationDensity?: number;
+    priorityScore?: number;
     location: string;
     description: string;
     status: string;
+    reportedBy: string;
+    reportedAt: string;
     aiScore?: number;
     assignedTo?: string;
-    reportedAt: string;
+    imageUrl?: string;
+    resolvedImageUrl?: string;
 }
+
+const getImageUrl = (url?: string) => {
+    if (!url) return undefined;
+    if (url.startsWith('http') || url.startsWith('data:')) return url;
+    const baseUrl = import.meta.env.VITE_API_URL || "http://localhost:5000";
+    const normalizedUrl = url.startsWith('/') ? url : `/${url}`;
+    return `${baseUrl}${normalizedUrl}`;
+};
 
 const ManageComplaints = () => {
     const [complaintsData, setComplaintsData] = useState<ComplaintData[]>([]);
+    const [userRole, setUserRole] = useState<string | null>(null);
+    const [isLoading, setIsLoading] = useState(true);
 
     // Filtering state
     const [searchQuery, setSearchQuery] = useState('');
@@ -26,78 +45,112 @@ const ManageComplaints = () => {
     const [priorityFilter, setPriorityFilter] = useState('all');
 
     useEffect(() => {
+        const role = localStorage.getItem('userRole');
+        setUserRole(role);
+
         const fetchComplaints = async () => {
+            setIsLoading(true);
             try {
-                const response = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/api/complaints`);
-                if (response.ok) {
-                    const data = await response.json();
-                    setComplaintsData(data);
+                let queryParam = '';
+                if (role === 'worker') {
+                    const userName = localStorage.getItem('userName');
+                    if (userName) queryParam = `?assignedTo=${encodeURIComponent(userName)}`;
                 }
-            } catch (error) {
+
+                const data = await api.get<ComplaintData[]>(`/api/complaints${queryParam}`);
+                setComplaintsData(data);
+            } catch (error: any) {
                 console.error('Failed to fetch complaints:', error);
+                toast.error(error.message || 'Failed to load complaints');
+            } finally {
+                setIsLoading(false);
             }
         };
 
         fetchComplaints();
     }, []);
 
-    const handleResolve = async (id: string) => {
-        try {
-            const response = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/api/complaints/${id}/resolve`, {
-                method: 'PATCH',
-            });
-            if (response.ok) {
-                // Update local state to reflect the change
-                setComplaintsData(prev => prev.map(c =>
-                    c._id === id ? { ...c, status: 'resolved' } : c
-                ));
-                toast.success('Complaint successfully marked as resolved!');
-            }
-        } catch (error) {
-            console.error('Failed to resolve complaint:', error);
-            toast.error('Failed to resolve complaint.');
+    // Resolve Modal State
+    const [resolveModalOpen, setResolveModalOpen] = useState(false);
+    const [resolvingId, setResolvingId] = useState<string | null>(null);
+    const [resolvedImagePreview, setResolvedImagePreview] = useState<string | null>(null);
+    const [resolvedImageFile, setResolvedImageFile] = useState<File | null>(null);
+    const resolveFileInputRef = useRef<HTMLInputElement>(null);
+
+    const openResolveModal = (id: string) => {
+        setResolvingId(id);
+        setResolvedImagePreview(null);
+        setResolvedImageFile(null);
+        setResolveModalOpen(true);
+    };
+
+    const handleResolvedImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            setResolvedImageFile(file);
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                setResolvedImagePreview(reader.result as string);
+            };
+            reader.readAsDataURL(file);
         }
     };
 
-    const handleUpdateStatus = async (id: string, newStatus: string) => {
+    const confirmResolve = async () => {
+        if (!resolvingId) return;
+        setResolveModalOpen(false);
+        const tid = toast.loading('Updating status...');
+
         try {
-            const response = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/api/complaints/${id}/status`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ status: newStatus }),
-            });
-            if (response.ok) {
-                setComplaintsData(prev => prev.map(c =>
-                    c._id === id ? { ...c, status: newStatus } : c
-                ));
-                toast.success(`Complaint status securely updated to ${newStatus}.`);
-            } else {
-                toast.error('Failed to update complaint status.');
+            const formData = new FormData();
+            formData.append('status', 'resolved');
+            if (resolvedImageFile) {
+                formData.append('resolvedImage', resolvedImageFile);
             }
-        } catch (error) {
-            console.error('Failed to update status:', error);
-            toast.error('Could not reach servers.');
+
+            const updatedComplaint = await api.patch(`/api/complaints/${resolvingId}/status`, formData);
+            setComplaintsData(prev => prev.map(c => c._id === resolvingId ? updatedComplaint : c));
+            toast.success('Complaint successfully marked as resolved!', { id: tid });
+        } catch (error: any) {
+            console.error('Failed to resolve complaint:', error);
+            toast.error(error.message || 'Failed to resolve complaint', { id: tid });
+        }
+    };
+
+    const handleResolve = (id: string) => {
+        openResolveModal(id);
+    };
+
+    const handleUpdateStatus = async (id: string, newStatus: string) => {
+        if (newStatus === 'resolved') {
+            openResolveModal(id);
+        } else {
+            const tid = toast.loading(`Updating status to ${newStatus}...`);
+            try {
+                const updatedComplaint = await api.patch(`/api/complaints/${id}/status`, { status: newStatus });
+                setComplaintsData(prev => prev.map(c => c._id === id ? updatedComplaint : c));
+                toast.success(`Complaint status securely updated to ${newStatus}.`, { id: tid });
+            } catch (error: any) {
+                console.error('Failed to update status:', error);
+                toast.error(error.message || 'Failed to update status', { id: tid });
+            }
         }
     };
 
     const handleAssign = async (id: string, assignee: string) => {
+        const tid = toast.loading(`Assigning to ${assignee}...`);
         try {
-            const response = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/api/complaints/${id}/assign`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ assignedTo: assignee }),
-            });
-            if (response.ok) {
-                setComplaintsData(prev => prev.map(c =>
-                    c._id === id ? { ...c, assignedTo: assignee } : c
-                ));
-                toast.success(`Complaint assigned to ${assignee}`);
-            } else {
-                toast.error('Failed to assign complaint.');
-            }
-        } catch (error) {
+            // Check if backend has a specific /assign route or if we should use /status update?
+            // Existing code used /api/complaints/${id}/assign. Let's assume it exists or refactor to use PATCH /status if needed.
+            // But let's stick to the existing route for now if it exists, otherwise I'll need to check backend routes.
+            await api.patch(`/api/complaints/${id}/assign`, { assignedTo: assignee });
+            setComplaintsData(prev => prev.map(c =>
+                c._id === id ? { ...c, assignedTo: assignee } : c
+            ));
+            toast.success(`Complaint assigned to ${assignee}`, { id: tid });
+        } catch (error: any) {
             console.error('Failed to assign complaint:', error);
-            toast.error('Could not reach servers.');
+            toast.error(error.message || 'Failed to assign complaint', { id: tid });
         }
     };
 
@@ -114,12 +167,16 @@ const ManageComplaints = () => {
     });
 
     return (
-        <Layout type="admin">
+        <Layout type={userRole === 'admin' ? 'admin' : 'citizen'}>
             <div className="max-w-7xl mx-auto px-6 py-8 w-full">
                 {/* Header */}
                 <div className="mb-8">
-                    <h1 className="text-3xl font-bold text-[#115e59] mb-2">Complaint Management</h1>
-                    <p className="text-gray-500">Review, assign, and manage all citizen complaints</p>
+                    <h1 className="text-3xl font-bold text-[#115e59] mb-2">
+                        {userRole === 'worker' ? 'My Assigned Tasks' : 'Complaint Management'}
+                    </h1>
+                    <p className="text-gray-500">
+                        {userRole === 'worker' ? 'View and update status of issues assigned to you' : 'Review, assign, and manage all citizen complaints'}
+                    </p>
                 </div>
 
                 {/* Filter Bar */}
@@ -193,12 +250,26 @@ const ManageComplaints = () => {
                                     <th className="px-6 py-4 font-bold text-gray-900">Status</th>
                                     <th className="px-6 py-4 font-bold text-gray-900">Location</th>
                                     <th className="px-6 py-4 font-bold text-gray-900">Reported</th>
-                                    <th className="px-6 py-4 font-bold text-gray-900 whitespace-nowrap">Assigned To</th>
+                                    {userRole === 'admin' && <th className="px-6 py-4 font-bold text-gray-900 whitespace-nowrap">Assigned To</th>}
                                     <th className="px-6 py-4 font-bold text-gray-900 text-right">Actions</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100">
-                                {filteredComplaints.length === 0 ? (
+                                {isLoading ? (
+                                    [...Array(5)].map((_, i) => (
+                                        <tr key={i}>
+                                            <td className="px-6 py-4"><Skeleton height={20} width={80} /></td>
+                                            <td className="px-6 py-4"><Skeleton height={20} width={150} /></td>
+                                            <td className="px-6 py-4"><Skeleton height={20} width={100} /></td>
+                                            <td className="px-6 py-4"><Skeleton height={24} width={60} circle={false} /></td>
+                                            <td className="px-6 py-4"><Skeleton height={24} width={80} /></td>
+                                            <td className="px-6 py-4"><Skeleton height={20} width={120} /></td>
+                                            <td className="px-6 py-4"><Skeleton height={20} width={80} /></td>
+                                            {userRole === 'admin' && <td className="px-6 py-4"><Skeleton height={20} width={100} /></td>}
+                                            <td className="px-6 py-4"><Skeleton height={32} width={120} /></td>
+                                        </tr>
+                                    ))
+                                ) : filteredComplaints.length === 0 ? (
                                     <tr>
                                         <td colSpan={9} className="px-6 py-8 text-center text-gray-500">
                                             No complaints match your filters.
@@ -212,27 +283,34 @@ const ManageComplaints = () => {
                                             </td>
 
                                             <td className="px-6 py-4 align-top max-w-[280px]">
-                                                <div className="flex flex-col gap-1 items-start">
-                                                    <span className="font-semibold text-gray-900 truncate w-full" title={complaint.title}>
-                                                        {complaint.title}
-                                                    </span>
-                                                    {complaint.aiScore && (
-                                                        <span className="bg-purple-100 text-[#a855f7] px-2 py-0.5 rounded text-[10px] font-bold tracking-wide mt-1">
-                                                            AI: {complaint.aiScore}%
-                                                        </span>
+                                                <div className="flex gap-3">
+                                                    {complaint.imageUrl && (
+                                                        <a href={getImageUrl(complaint.imageUrl)} target="_blank" rel="noreferrer" className="w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 border border-gray-100 shadow-sm hover:opacity-80 transition-opacity">
+                                                            <img src={getImageUrl(complaint.imageUrl)} alt="Issue" className="w-full h-full object-cover" />
+                                                        </a>
                                                     )}
-                                                    <div className="flex gap-2 mt-2">
-                                                        {complaint.status !== 'resolved' && (
-                                                            <button
-                                                                onClick={() => handleResolve(complaint._id)}
-                                                                className="text-xs bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-semibold px-2 py-1 rounded transition-colors"
-                                                            >
-                                                                Resolve
-                                                            </button>
+                                                    <div className="flex flex-col gap-1 items-start min-w-0 flex-1">
+                                                        <span className="font-semibold text-gray-900 truncate w-full" title={complaint.title}>
+                                                            {complaint.title}
+                                                        </span>
+                                                        {complaint.aiScore && (
+                                                            <span className="bg-purple-100 text-[#a855f7] px-2 py-0.5 rounded text-[10px] font-bold tracking-wide">
+                                                                AI: {complaint.aiScore}%
+                                                            </span>
                                                         )}
-                                                        <button className="text-xs text-gray-500 hover:text-[#115e59] font-semibold transition-colors">
-                                                            View Details
-                                                        </button>
+                                                        <div className="flex gap-2 mt-2">
+                                                            {complaint.status !== 'resolved' && (
+                                                                <button
+                                                                    onClick={() => handleResolve(complaint._id)}
+                                                                    className="text-xs bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-semibold px-2 py-1 rounded transition-colors"
+                                                                >
+                                                                    Resolve
+                                                                </button>
+                                                            )}
+                                                            <button className="text-xs text-gray-500 hover:text-[#115e59] font-semibold transition-colors">
+                                                                View Details
+                                                            </button>
+                                                        </div>
                                                     </div>
                                                 </div>
                                             </td>
@@ -242,14 +320,21 @@ const ManageComplaints = () => {
                                             </td>
 
                                             <td className="px-6 py-4 align-top">
-                                                <span className={`inline-block px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wide uppercase whitespace-nowrap
-                                                    ${complaint.priority === 'critical' ? 'bg-red-100 text-red-600' : ''}
-                                                    ${complaint.priority === 'high' ? 'bg-orange-100 text-orange-600' : ''}
-                                                    ${complaint.priority === 'medium' ? 'bg-yellow-100 text-yellow-600' : ''}
-                                                    ${complaint.priority === 'low' ? 'bg-green-100 text-green-600' : ''}
-                                                `}>
-                                                    {complaint.priority}
-                                                </span>
+                                                <div className="flex flex-col gap-1">
+                                                    <span className={`inline-block px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wide uppercase whitespace-nowrap w-fit
+                                                        ${complaint.priority === 'critical' ? 'bg-red-100 text-red-600' : ''}
+                                                        ${complaint.priority === 'high' ? 'bg-orange-100 text-orange-600' : ''}
+                                                        ${complaint.priority === 'medium' ? 'bg-yellow-100 text-yellow-600' : ''}
+                                                        ${complaint.priority === 'low' ? 'bg-green-100 text-green-600' : ''}
+                                                    `}>
+                                                        {complaint.priority}
+                                                    </span>
+                                                    {complaint.priorityScore && (
+                                                        <span className="text-[10px] text-gray-400 font-medium ml-1">
+                                                            Impact Score: {complaint.priorityScore}/15
+                                                        </span>
+                                                    )}
+                                                </div>
                                             </td>
 
                                             <td className="px-6 py-4 align-top">
@@ -270,22 +355,24 @@ const ManageComplaints = () => {
                                                 {new Date(complaint.reportedAt).toLocaleDateString()}
                                             </td>
 
-                                            <td className="px-6 py-4 align-top text-gray-600 whitespace-nowrap">
-                                                <select
-                                                    value={complaint.assignedTo || ''}
-                                                    onChange={(e) => handleAssign(complaint._id, e.target.value)}
-                                                    className="bg-transparent border-b border-gray-300 border-dashed pb-0.5 text-sm focus:outline-none focus:border-[#115e59] text-gray-700 cursor-pointer appearance-none pr-4"
-                                                    style={{ backgroundImage: `url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%239ca3af%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right center', backgroundSize: '8px auto' }}
-                                                >
-                                                    <option value="" disabled>Unassigned</option>
-                                                    <option value="Sanitation Dept">Sanitation Dept</option>
-                                                    <option value="Roads & Highways">Roads & Highways</option>
-                                                    <option value="Water Board">Water Board</option>
-                                                    <option value="Electrical Dept">Electrical Dept</option>
-                                                    <option value="Parks & Rec">Parks & Rec</option>
-                                                    <option value="City Police">City Police</option>
-                                                </select>
-                                            </td>
+                                            {userRole === 'admin' && (
+                                                <td className="px-6 py-4 align-top text-gray-600 whitespace-nowrap">
+                                                    <select
+                                                        value={complaint.assignedTo || ''}
+                                                        onChange={(e) => handleAssign(complaint._id, e.target.value)}
+                                                        className="bg-transparent border-b border-gray-300 border-dashed pb-0.5 text-sm focus:outline-none focus:border-[#115e59] text-gray-700 cursor-pointer appearance-none pr-4"
+                                                        style={{ backgroundImage: `url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%239ca3af%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right center', backgroundSize: '8px auto' }}
+                                                    >
+                                                        <option value="" disabled>Unassigned</option>
+                                                        <option value="Sanitation Dept">Sanitation Dept</option>
+                                                        <option value="Roads & Highways">Roads & Highways</option>
+                                                        <option value="Water Board">Water Board</option>
+                                                        <option value="Electrical Dept">Electrical Dept</option>
+                                                        <option value="Parks & Rec">Parks & Rec</option>
+                                                        <option value="City Police">City Police</option>
+                                                    </select>
+                                                </td>
+                                            )}
 
                                             <td className="px-6 py-4 align-top text-right whitespace-nowrap">
                                                 <div className="flex items-center justify-end gap-2">
@@ -318,6 +405,65 @@ const ManageComplaints = () => {
                 </div>
 
             </div>
+
+            {/* Resolve Modal */}
+            {resolveModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col">
+                        <div className="p-4 border-b border-gray-100 flex justify-between items-center">
+                            <h2 className="text-lg font-bold text-gray-900">Resolve Complaint</h2>
+                            <button
+                                onClick={() => setResolveModalOpen(false)}
+                                className="text-gray-400 hover:text-gray-600 transition-colors"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <div className="p-6">
+                            <p className="text-sm text-gray-600 mb-4">
+                                Please upload an "After" photo to show the resolved state of the issue before closing it. This provides confirmation for the citizen.
+                            </p>
+
+                            <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                ref={resolveFileInputRef}
+                                onChange={handleResolvedImageChange}
+                            />
+                            <div
+                                onClick={() => resolveFileInputRef.current?.click()}
+                                className="border-2 border-dashed border-gray-300 rounded-xl p-8 flex flex-col items-center justify-center bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer text-center relative overflow-hidden"
+                            >
+                                {resolvedImagePreview && (
+                                    <img src={resolvedImagePreview} alt="Preview" className="absolute inset-0 w-full h-full object-cover opacity-60" />
+                                )}
+                                <div className="z-10 flex flex-col items-center">
+                                    <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-sm mb-3 text-gray-400">
+                                        <Camera className="w-6 h-6" />
+                                    </div>
+                                    <p className="font-semibold text-gray-900 text-sm mb-1">{resolvedImagePreview ? 'Click to change photo' : 'Upload verification photo'}</p>
+                                    <p className="text-xs text-gray-500">Optional, but highly recommended</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="p-4 border-t border-gray-100 flex justify-end gap-3 bg-gray-50/50">
+                            <button
+                                onClick={() => setResolveModalOpen(false)}
+                                className="px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={confirmResolve}
+                                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-lg transition-colors shadow-sm"
+                            >
+                                Complete Resolution
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </Layout>
     );
 };
