@@ -1,11 +1,5 @@
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
-interface ApiResponse<T = any> {
-    success: boolean;
-    message: string;
-    data: T;
-    error?: string;
-}
 
 export const api = {
     async request<T = any>(endpoint: string, options: RequestInit = {}): Promise<T> {
@@ -38,10 +32,22 @@ export const api = {
             headers,
         });
 
-        const result: ApiResponse<T> = await response.json();
+        let result: any;
+        const contentType = response.headers.get('content-type');
+        
+        try {
+            if (contentType && contentType.includes('application/json')) {
+                result = await response.json();
+            } else {
+                result = { message: await response.text() };
+            }
+        } catch (e) {
+            result = { message: 'Failed to parse server response' };
+        }
 
         if (!response.ok) {
-            throw new Error(result.message || 'Something went wrong');
+            const errorMessage = result?.message || result?.error || `Error: ${response.status} ${response.statusText}`;
+            throw new Error(errorMessage);
         }
 
         return result.data;

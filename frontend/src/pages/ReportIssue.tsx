@@ -142,6 +142,7 @@ const ReportIssue = () => {
         } catch (error: any) {
             console.error('Error submitting complaint:', error);
             toast.error(error.message || 'Failed to submit complaint', { id: tid });
+            console.error('Submission error details:', error);
         } finally {
             setIsSubmitting(false);
         }
@@ -240,6 +241,7 @@ const ReportIssue = () => {
                                 rows={4}
                                 placeholder="Provide detailed information about the issue..."
                                 required
+                                minLength={10}
                                 value={formData.description}
                                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                                 className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#115e59]/20 focus:border-[#115e59] transition-all resize-none"
