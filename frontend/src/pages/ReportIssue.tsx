@@ -33,15 +33,18 @@ const ReportIssue = () => {
         await new Promise(resolve => setTimeout(resolve, 2500));
 
         const fileName = file.name.toLowerCase();
+        const title = formData.title.toLowerCase();
+        const searchText = `${fileName} ${title}`;
+        
         let detected = { category: 'Others', priority: 'medium', confidence: 85 };
 
-        if (fileName.includes('garbage') || fileName.includes('waste') || fileName.includes('trash')) {
+        if (searchText.includes('garbage') || searchText.includes('waste') || searchText.includes('trash') || searchText.includes('dump')) {
             detected = { category: 'Garbage', priority: 'medium', confidence: 98 };
-        } else if (fileName.includes('pothole') || fileName.includes('road')) {
+        } else if (searchText.includes('pothole') || searchText.includes('road') || searchText.includes('crack') || searchText.includes('pit')) {
             detected = { category: 'Potholes', priority: 'high', confidence: 94 };
-        } else if (fileName.includes('drain') || fileName.includes('water')) {
+        } else if (searchText.includes('drain') || searchText.includes('water') || searchText.includes('sewage') || searchText.includes('leak')) {
             detected = { category: 'Drainage', priority: 'high', confidence: 89 };
-        } else if (fileName.includes('light')) {
+        } else if (searchText.includes('light') || searchText.includes('lamp') || searchText.includes('dark')) {
             detected = { category: 'Street Lights', priority: 'low', confidence: 92 };
         }
 

@@ -22,7 +22,7 @@ app.use(helmet({ crossOriginResourcePolicy: false }));
 app.use(cors({
     origin: '*',
     methods: ['GET', 'POST', 'PATCH', 'DELETE'],
-    allowedHeaders: ['Content-Type', 'Authorization']
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-auth-token']
 }));
 app.use(morgan('dev'));
 app.use(express.json());

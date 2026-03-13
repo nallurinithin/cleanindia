@@ -41,17 +41,27 @@ const Layout = ({ children, type = 'citizen' }: LayoutProps) => {
     const userEmail = localStorage.getItem('userEmail');
 
     const fetchNotifications = async () => {
+        if (!userEmail) return;
+        
         try {
-            const res = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/api/notifications?role=${userRole}&identifier=${userEmail}`);
+            const token = localStorage.getItem('token');
+            const res = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/api/notifications?recipient=${userEmail}`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'x-auth-token': token || ''
+                }
+            });
+            
             if (res.ok) {
                 const contentType = res.headers.get('content-type');
                 if (!contentType || !contentType.includes('application/json')) return;
 
                 const data = await res.json();
+                const items = data.data || [];
 
                 // Check for new notifications to show toast
-                if (notifications.length > 0 && data.length > notifications.length) {
-                    const newNotifs = data.filter((n: any) => !notifications.find((old: any) => old._id === n._id));
+                if (notifications.length > 0 && items.length > notifications.length) {
+                    const newNotifs = items.filter((n: any) => !notifications.find((old: any) => old._id === n._id));
                     newNotifs.forEach((n: any) => {
                         toast(n.message, {
                             icon: n.type === 'success' ? '✅' : (n.type === 'warning' ? '⚠️' : '🔔'),
@@ -60,7 +70,7 @@ const Layout = ({ children, type = 'citizen' }: LayoutProps) => {
                     });
                 }
 
-                setNotifications(data);
+                setNotifications(items);
             }
         } catch (error) {
             console.error('Error fetching notifications:', error);
