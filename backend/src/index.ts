@@ -39,6 +39,8 @@ const limiter = rateLimit({
 app.use('/api/', limiter);
 
 // Connect to MongoDB
+console.log("MONGO_URI:", process.env.MONGO_URI);
+
 mongoose.connect(process.env.MONGO_URI as string)
     .then(() => console.log('Connected to MongoDB'))
     .catch((err) => console.error('MongoDB connection error:', err));
